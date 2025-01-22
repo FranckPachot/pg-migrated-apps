@@ -16,16 +16,13 @@ cd orthanc-setup-samples/docker/postgresql
 
 ```
 Modify the following in the Docker Compose file:
-- Use PostgreSQL 12 to avoid pg_dump compatibility errors
 - Add `yb` to the host list to connect to the YugabyteDB database when we stop the PostgreSQL one 
-and start PostgreSQL (orthanc-index) and Orthanc (orthanc)
+and start PostgreSQL (orthanc-index) and Orthanc (orthanc);
 
 ```
-
-
-sed -e '/image/s/postgres:15/postgres:12/' -i docker-compose.yml
 sed -e '/depends_on/s/^/#/'                -i docker-compose.yml
 sed -e '/Host/s/orthanc-index/&,yb/'       -i docker-compose.yml
+git diff
 docker compose up -d orthanc-index
 docker compose up -d orthanc
 
@@ -37,7 +34,7 @@ Run the application (Orthanc Explorer 2) on http://localhost:8042/ui/app/index.h
 
 Upload some DICOM files. 
 You can get some 💀 from in https://medimodel.com/wp-content/uploads/2021/03/2_skull_ct.zip 
-(upload the DICOM directory)
+(unzip and upload the DICOM directory)
 
 ![image](https://github.com/user-attachments/assets/a3755267-fcea-4c02-a83b-a629512cd599)
 
@@ -55,17 +52,13 @@ Add YugabyteDB service to docker compose:
 ```
 
   yb:
-    image: yugabytedb/yugabyte:2024.1.1.0-b137
-    command: bash -c 'rm -rf /tmp/.yb.* ; yugabyted start --ysql_port=5432 --enable_pg_parity_tech_preview --background=false --tserver_flags=yb_enable_read_committed_isolation=false,ysql_colocate_database_by_default=true'
+    image: yugabytedb/yugabyte:2.25.0.0-b489
+    command: bash -c 'rm -rf /tmp/.yb.* ; yugabyted start --ysql_port=5432 --enable_pg_parity_early_access --background=false --tserver_flags=ysql_colocate_database_by_default=true'
     ports:
       - 15433:15433
 
 
 ```
-
-I disable Read Commited to avoid `PostgreSQL error: ERROR:  SET TRANSACTION ISOLATION LEVEL must not be called in a subtransaction` [#12494](https://github.com/yugabyte/yugabyte-db/issues/12494)
-
-Another option may be adding ` "TransactionMode": "ReadCommitted" ` in the PostgreSQL plugin settings ([doc](https://orthanc.uclouvain.be/book/plugins/postgresql.html#id13))
 
 ## Start YugabyteDB
 
@@ -83,13 +76,13 @@ Start a container with the YugabyteDB voyager image and run the migration steps 
 ```
 
 docker run -it --rm --name ybv --network postgresql_default --link postgresql-orthanc-index-1:pg --link postgresql-yb-1:yb \
- yugabytedb/yb-voyager:1.7.2 \
+ yugabytedb/yb-voyager:1.8.9.1 \
  bash -xc '
-yb-voyager assess-migration --export-dir /var/tmp --start-clean=true --source-db-host pg --source-db-user postgres --source-db-password postgres --source-db-name postgres --source-db-schema public --source-db-type postgresql --iops-capture-interval 0
-cat /var/tmp/assessment/reports/assessmentReport.json
+yb-voyager assess-migration --export-dir /var/tmp --start-clean=true --source-db-host pg --source-db-user postgres --source-db-password postgres --source-db-name postgres --source-db-schema public --source-db-type postgresql --iops-capture-interval 0 <<<Y
+cat /var/tmp/assessment/reports/migration_assessment_report.json
 yb-voyager export schema    --export-dir /var/tmp --start-clean=true --source-db-host pg --source-db-user postgres --source-db-password postgres --source-db-name postgres --source-db-schema public --source-db-type postgresql
 yb-voyager analyze-schema   --export-dir /var/tmp
-cat /var/tmp/reports/schema_analysis_report.txt
+cat /var/tmp/reports/schema_analysis_report.json
 yb-voyager import schema    --export-dir /var/tmp                    --target-db-host yb --target-db-user postgres --target-db-password postgres --target-db-name postgres --target-db-port=5432 --target-db-schema public <<<Y 
 yb-voyager export data      --export-dir /var/tmp --start-clean=true --source-db-host pg --source-db-user postgres --source-db-password postgres --source-db-name postgres --source-db-schema public --source-db-type postgresql
 yb-voyager import data      --export-dir /var/tmp                    --target-db-host yb --target-db-user postgres --target-db-password postgres --target-db-name postgres --target-db-port=5432
